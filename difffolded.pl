@@ -58,6 +58,7 @@ use Getopt::Std;
 # defaults
 my $normalize = 0;	# make sample counts equal
 my $striphex = 0;	# strip hex numbers
+my $diff = 0;	# strip hex numbers
 
 sub usage {
 	print STDERR <<USAGE_END;
@@ -65,6 +66,7 @@ USAGE: $0 [-hns] folded1 folded2 | flamegraph.pl > diff2.svg
 	    -h       # help message
 	    -n       # normalize sample counts
 	    -s       # strip hex numbers (addresses)
+	    -d       # diff
 See stackcollapse scripts for generating folded files.
 Also consider flipping the files and hues to highlight reduced paths:
 $0 folded2 folded1 | ./flamegraph.pl --negate > diff1.svg
@@ -73,11 +75,12 @@ USAGE_END
 }
 
 usage() if @ARGV < 2;
-our($opt_h, $opt_n, $opt_s);
-getopts('ns') or usage();
+our($opt_h, $opt_n, $opt_s, $opt_d);
+getopts('nsd') or usage();
 usage() if $opt_h;
 $normalize = 1 if defined $opt_n;
 $striphex = 1 if defined $opt_s;
+$diff = 1 if defined $opt_d;
 
 my ($total1, $total2) = (0, 0);
 my %Folded;
@@ -86,6 +89,7 @@ my $file1 = $ARGV[0];
 my $file2 = $ARGV[1];
 
 open FILE, $file1 or die "ERROR: Can't read $file1\n";
+my $file1_line = <FILE>;
 while (<FILE>) {
 	chomp;
 	my ($stack, $count) = (/^(.*)\s+?(\d+(?:\.\d*)?)$/);
@@ -96,6 +100,7 @@ while (<FILE>) {
 close FILE;
 
 open FILE, $file2 or die "ERROR: Can't read $file2\n";
+my $file2_line = <FILE>;
 while (<FILE>) {
 	chomp;
 	my ($stack, $count) = (/^(.*)\s+?(\d+(?:\.\d*)?)$/);
@@ -105,11 +110,27 @@ while (<FILE>) {
 }
 close FILE;
 
+if($diff){
+	my $timefile1 = (split / /, $file1_line)[1];
+	my $timefile2 = (split / /, $file2_line)[1];
+	my $delta = $timefile2 - $timefile1;
+	print "TIMEDELTA: $delta\n";
+} else {
+	print "$file1_line";
+}
+
 foreach my $stack (keys %Folded) {
 	$Folded{$stack}{1} = 0 unless defined $Folded{$stack}{1};
 	$Folded{$stack}{2} = 0 unless defined $Folded{$stack}{2};
 	if ($normalize && $total1 != $total2) {
 		$Folded{$stack}{1} = int($Folded{$stack}{1} * $total2 / $total1);
 	}
-	print "$stack $Folded{$stack}{1} $Folded{$stack}{2}\n";
+	my $diff_value = $Folded{$stack}{2} - $Folded{$stack}{1};
+	if (!$diff && $Folded{$stack}{1}){
+		print "$stack $Folded{$stack}{1} $diff_value\n";
+	} elsif ($diff && $diff_value) {
+		my $diff_norm = abs($diff_value);
+		my $sign = $diff_value > 0 ? 1 : -1;
+		print "$stack $diff_norm $sign\n";
+	}
 }
